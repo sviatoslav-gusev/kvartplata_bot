@@ -1,0 +1,59 @@
+{
+  "configurations": [
+    {
+      "name": "CMake Configure (Debug)",
+      "type": "command",
+      "program": "cmake",
+      "args": [
+        "-S", "$PROJECT_DIR$",
+        "-B", "$PROJECT_DIR$/build/debug",
+        "-G", "Ninja",
+        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DCMAKE_CXX_COMPILER=clang++",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+      ],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "CMake Configure (Debug) - Win",
+      "type": "command",
+      "program": "$USER_HOME$/scoop/apps/cmake/current/bin/cmake.exe",
+      "args": [
+        "--preset", "win-clang-ninja"
+      ],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Build (Debug) - Win",
+      "type": "command",
+      "program": "$USER_HOME$/scoop/apps/cmake/current/bin/cmake.exe",
+      "args": ["--build", "--preset", "build", "--parallel"],
+      "dependsOn": ["CMake Configure (Debug) - Win"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Build (Debug)",
+      "type": "command",
+      "program": "cmake",
+      "args": ["--build", "$PROJECT_DIR$/build/debug", "--target", "kvartplata_bot"],
+      "dependsOn": ["CMake Configure (Debug)"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Run (Debug)",
+      "type": "command",
+      "program": "$PROJECT_DIR$/build/debug/kvartplata_bot",
+      "dependsOn": ["Build (Debug)"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Run (Debug) (unbuffered)",
+      "type": "command",
+      "program": "bash",
+      "args": ["-lc", "cd \"$PROJECT_DIR$/build/debug\" && stdbuf -o0 -e0 ./kvartplata_bot 2>&1 | cat"],
+      "dependsOn": ["Build (Debug)"],
+      "workingDir": "$PROJECT_DIR$"
+    }
+
+  ]
+}
