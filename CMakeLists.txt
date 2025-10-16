@@ -12,8 +12,10 @@ add_executable(kvartplata_bot
     src/Application.cpp
     src/Bot.cpp
     src/Scheduler.cpp
-    src/TokenStorage.cpp
     src/UserConfig.cpp
+    src/storages/ConfigStorage.cpp
+    src/storages/PathsStorage.cpp
+    src/storages/TokenStorage.cpp
 )
 
 # --- Общие зависимости ---

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "storages/PathsStorage.h"
 #include <chrono>
 #include <format>
 #include <fstream>
@@ -30,8 +31,8 @@ class Logger
                               "WTF";
 
 public:
-    Logger()
-      : m_log_file(m_log_filename.data(), std::ios::out | std::ios::app | std::ios::binary)
+    explicit Logger(const PathsStorage & paths)
+      : m_log_file(paths.log_path(), std::ios::out | std::ios::app | std::ios::binary)
     {
       if (!m_log_file) throw std::runtime_error("log: cannot open log file");
 
@@ -98,8 +99,6 @@ private:
 
 private:
     mutable std::mutex m_file_mtx;
-
-    static constexpr std::string_view m_log_filename{"kvartplata_bot.log"};
     mutable std::ofstream m_log_file;
 };
 

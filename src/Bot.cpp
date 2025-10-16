@@ -25,12 +25,12 @@ kbot::Bot::Bot(Logger & log, Application & app, Scheduler & sch, std::string tok
 
 void kbot::Bot::notify_payment(UserID user_id)
 {
-    if (!m_app.has_config(user_id)) {
+    if (!m_app.cfg().has(user_id)) {
         m_log.error("{}: no config", __func__);
         return;
     }
 
-    m_bot.getApi().sendMessage(m_app.get_config(user_id).chat_id.get(),
+    m_bot.getApi().sendMessage(m_app.cfg().get(user_id).chat_id.get(),
                                std::format("Hi, #{}.\n"
                                            "Albanian reminder.\n"
                                            "Send \"Y\" if you paid for current month.\n",
@@ -40,7 +40,7 @@ void kbot::Bot::notify_payment(UserID user_id)
     /********** SCHEDULE NEXT **********/
     std::scoped_lock lk(m_mutex);
 
-    UserConfig & cfg = m_app.get_config(user_id);
+    UserConfig & cfg = m_app.cfg().get(user_id);
     cfg.scheduled_payment_task_id.clear();
 
     using namespace std::chrono;
@@ -73,14 +73,14 @@ void kbot::Bot::notify_payment(UserID user_id)
 
 void kbot::Bot::submit_payment(UserID user_id)
 {
-    if (!m_app.has_config(user_id)) {
+    if (!m_app.cfg().has(user_id)) {
         m_log.error("{}: no config", __func__);
         return;
     }
 
     std::scoped_lock lk(m_mutex);
 
-    UserConfig & cfg = m_app.get_config(user_id);
+    UserConfig & cfg = m_app.cfg().get(user_id);
     const ChatID chat_id = cfg.chat_id;
 
     using namespace std::chrono;
@@ -149,11 +149,11 @@ void kbot::Bot::unschedule_payment_notification(UserID user_id)
 {
 //    std::scoped_lock lk(m_mutex);
 
-    if (!m_app.has_config(user_id)) {
+    if (!m_app.cfg().has(user_id)) {
         return;
     }
 
-    UserConfig & cfg = m_app.get_config(user_id);
+    UserConfig & cfg = m_app.cfg().get(user_id);
 
     if (cfg.scheduled_payment_task_id.empty()) {
         return;
@@ -168,7 +168,7 @@ void kbot::Bot::load_bot_commands()
         const UserID user_id{msg->from->id};
         const ChatID chat_id{msg->chat->id};
 
-        if(m_app.has_config(user_id)) // User duplicated start
+        if(m_app.cfg().has(user_id)) // User duplicated start
         {
             m_log.wow("onCommand(\"start\"): /start for existing user #{}", user_id);
             m_bot.getApi().sendMessage(chat_id.get(),
@@ -179,7 +179,7 @@ void kbot::Bot::load_bot_commands()
         }
 
         UserConfig new_user_config(user_id, chat_id);
-        m_app.set_config(new_user_config);
+        m_app.cfg().set(new_user_config);
         initial_user_schedule(new_user_config);
 
         m_log.wow("onCommand(\"start\"): /start for new user #{}", user_id);

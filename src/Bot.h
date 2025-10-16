@@ -27,7 +27,7 @@ public:
     void notify_payment(UserID user_id);  // scheduled user reminding, new reminding for tomorrow
     void submit_payment(UserID user_id);  // get payment confirmation, rescheduling to next payment period
 private:
-    void load_bot_commands(); // Use before start
+    void load_bot_commands(); // Use before run
 
 private:
     Logger & m_log;

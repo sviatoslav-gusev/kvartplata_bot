@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Logger.h"
+#include "PathsStorage.h"
+#include "../Logger.h"
 #include <span>
 #include <string>
 #include <optional>
@@ -12,8 +13,9 @@ namespace kbot {
 class TokenStorage
 {
 public:
-    TokenStorage(Logger & log) :
-        m_log(log)
+    TokenStorage(const PathsStorage & paths, Logger & log)
+        : m_paths(paths)
+        , m_log(log)
     {}
 
     std::string load_token() const;
@@ -38,21 +40,10 @@ private:
     std::optional<std::string> read_token() const;
 
 private:
+    const PathsStorage & m_paths;
     Logger & m_log;
 
     static constexpr std::string_view MAGIC = "KTOK1";
-    static constexpr std::string_view m_enc_path = "kvartplata_bot.enc";
-    static constexpr std::string_view m_key_path = "kvartplata_bot.key";
 };
-
-
-
-
-//bool store_token(const std::filesystem::path& enc_path,
-//                 const std::filesystem::path& key_path,
-//                 std::string_view token);
-//
-//std::optional<std::string> load_token(const std::filesystem::path& enc_path,
-//                                      const std::filesystem::path& key_path);
 
 } // namespace kbot

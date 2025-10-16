@@ -19,14 +19,14 @@ namespace {
     }
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
 #ifdef SIGBREAK
     std::signal(SIGBREAK, on_signal);
 #endif
 
-    kbot::Application app;
+    kbot::Application app(argc, argv);
 
     app.bot().run_until([&]{ return g_stop != 0; });
 

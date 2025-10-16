@@ -1,5 +1,5 @@
 #include "TokenStorage.h"
-#include "Logger.h"
+#include "../Logger.h"
 
 #include <array>
 #include <cstddef>      // std::byte
@@ -152,7 +152,7 @@ void kbot::TokenStorage::xor_keystream_inplace(std::string & data,
 
 bool kbot::TokenStorage::ensure_user_key() const
 {
-    if (std::filesystem::exists(m_key_path)) {
+    if (std::filesystem::exists(m_paths.token_key_path())) {
         return true;
     }
     std::array<std::byte, 32> key{};
@@ -160,13 +160,13 @@ bool kbot::TokenStorage::ensure_user_key() const
     for (std::byte & b : key) {
         b = static_cast<std::byte>(rd());
     }
-    return write_all_bytes(m_key_path, key);
+    return write_all_bytes(m_paths.token_key_path(), key);
 }
 
 std::optional<std::vector<std::byte>> kbot::TokenStorage::load_user_key() const
 {
     std::vector<std::byte> v;
-    if (!read_all_bytes(m_key_path, v) || v.empty()) {
+    if (!read_all_bytes(m_paths.token_key_path(), v) || v.empty()) {
         return std::nullopt;
     }
     return v;
@@ -206,7 +206,7 @@ bool kbot::TokenStorage::write_token(std::string_view token) const
                  .append(cipher);
 
     // save encoded part
-    return write_all_bytes(m_enc_path, std::as_bytes(std::span{encoded_token.data(), encoded_token.size()}));
+    return write_all_bytes(m_paths.token_enc_path(), std::as_bytes(std::span{encoded_token.data(), encoded_token.size()}));
 }
 
 std::optional<std::string> kbot::TokenStorage::read_token() const
@@ -218,7 +218,7 @@ std::optional<std::string> kbot::TokenStorage::read_token() const
     const std::vector<std::byte> & user_key = *key_opt;
 
     std::vector<std::byte> blob;
-    if (!read_all_bytes(m_enc_path, blob)) {
+    if (!read_all_bytes(m_paths.token_enc_path(), blob)) {
         return std::nullopt;
     }
 
