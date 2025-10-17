@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <source_location>
 #include <string_view>
 
@@ -32,11 +33,16 @@ class Logger
 
 public:
     explicit Logger(const PathsStorage & paths)
-      : m_log_file(paths.log_path(), std::ios::out | std::ios::app | std::ios::binary)
+        : m_log_file(paths.enable_logs_to_file()
+                     ? std::make_optional<std::ofstream>(paths.log_path(), std::ios::out | std::ios::app | std::ios::binary)
+                     : std::nullopt)
     {
-      if (!m_log_file) throw std::runtime_error("log: cannot open log file");
+        std::ios::sync_with_stdio(false); // speedup cout via unsync printf and cout bufs
 
-      std::ios::sync_with_stdio(false); // speedup cout via unsync printf and cout bufs
+        if (!m_log_file)
+        {
+            warn("{}: Running without writing to file. If you want to turn writing on, run with -f or --enable_logs_to_file.", __func__);
+        }
     }
 
     template<class... Args>
@@ -76,9 +82,12 @@ private:
         std::vformat_to(std::back_inserter(line), fmt.get(), std::make_format_args(args...));
         line.push_back('\n');
 
-        std::scoped_lock lk(m_file_mtx);
-        m_log_file.write(line.data(), static_cast<std::streamsize>(line.size()));
-        m_log_file.flush();
+        if (m_log_file.has_value())
+        {
+            std::scoped_lock lk(m_file_mtx);
+            m_log_file->write(line.data(), static_cast<std::streamsize>(line.size()));
+            m_log_file->flush();
+        }
 
         if constexpr (L == Level::Error) {
             std::cerr << RED << line << RESET;
@@ -99,7 +108,7 @@ private:
 
 private:
     mutable std::mutex m_file_mtx;
-    mutable std::ofstream m_log_file;
+    mutable std::optional<std::ofstream> m_log_file;
 };
 
 } // namespace kbot

@@ -13,6 +13,7 @@ add_executable(kvartplata_bot
     src/Bot.cpp
     src/Scheduler.cpp
     src/UserConfig.cpp
+    src/helpers/Getopt.cpp
     src/storages/ConfigStorage.cpp
     src/storages/PathsStorage.cpp
     src/storages/TokenStorage.cpp

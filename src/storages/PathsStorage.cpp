@@ -1,56 +1,100 @@
 #include "PathsStorage.h"
-
-#ifndef _WIN32
-#include <getopt.h> // GNU getopt_long
-#endif
-
+#include "../helpers/Getopt.h"
+#include "../helpers/PathHelpers.h"
+#include <filesystem>
+#include <string_view>
 #include <iostream>
 
 kbot::PathsStorage::PathsStorage(int argc, char** argv)
 {
+    std::cout << "PathsStorage ctor: start\n";
     read_paths_from_cli_env(argc, argv);
+    std::cout << "PathsStorage ctor: end\n";
 }
 
-void kbot::PathsStorage::try_getenv(const char* env_name, std::string & destination)
+void kbot::PathsStorage::dir_existence(const std::string & name, const std::string_view & dir) const
 {
-    if (const char* v = std::getenv(env_name))
+    const std::filesystem::path path{dir};
+    if (!std::filesystem::exists(path) || !std::filesystem::is_directory(path))
     {
-        destination = v;
+        std::cerr << "Wrong " << name << " directory: " << path << std::endl;
+        std::cerr.flush();
+        exit(0);
     }
 }
 
 void kbot::PathsStorage::read_paths_from_cli_env(int argc, char** argv)
 {
-    // Try ENV (override defaults if exists)
-    try_getenv("KBOT_KEY_DIR", key_dir);
-    try_getenv("KBOT_CFG_DIR", cfg_dir);
-    try_getenv("KBOT_LOG_DIR", log_dir);
+    cfg_dir = "./";
+    key_dir = "./";
+    log_dir = "./";
+    m_enable_logs_to_file = false;
+    bool show_help = false;
 
-#ifndef _WIN32
-    // Try CLI (override ENV if exists)
-    option longopts[] = {
-        {"key_dir", required_argument, nullptr, 'k'},
-        {"cfg_dir", required_argument, nullptr, 'c'},
-        {"log_dir", required_argument, nullptr, 'l'},
-        {nullptr, 0, nullptr, 0}
-    };
-    int opt, idx;
-    while ((opt = getopt_long(argc, argv, "", longopts, &idx)) != -1) {
-        switch (opt) {
-            case 'k': key_dir = optarg; break;
-            case 'c': cfg_dir = optarg; break;
-            case 'l': log_dir = optarg; break;
-            default:
-                std::cerr << "Usage: " << argv[0]
-                          << " [--key_dir PATH] [--cfg_dir PATH] [--log_dir DIR]\n";
-                std::exit(2);
-        }
+    Getopt opt;
+
+    opt.add_option('h', "help", Getopt::Arg::None,
+                   "Show this help and exit",
+                   [&](std::optional<std::string_view>) {
+                       show_help = true;
+                   });
+
+    opt.add_option('f', "enable_logs_to_file", Getopt::Arg::None,
+                   "Enable writing logs to file",
+                   [&](std::optional<std::string_view>) {
+                       m_enable_logs_to_file = true;
+                   });
+
+    opt.add_option('c', "cfg_dir", Getopt::Arg::Required,
+                   "Config directory",
+                   [&](std::optional<std::string_view> v) {
+                       cfg_dir = v ? std::string(*v) : cfg_dir;
+                   });
+
+    opt.add_option('k', "key_dir", Getopt::Arg::Required,
+                   "Key directory",
+                   [&](std::optional<std::string_view> v) {
+                       key_dir = v ? std::string(*v) : key_dir;
+                   });
+
+    opt.add_option('l', "log_dir", Getopt::Arg::Required,
+                   "Log directory",
+                   [&](std::optional<std::string_view> v) {
+                       log_dir = v ? std::string(*v) : log_dir;
+                   });
+
+    const Getopt::Result positionals = opt.parse(argc, argv);
+
+    if (!positionals.positionals.empty()) {
+        std::cerr << "You do not need to set positional arguments. Read Help:\n";
+        std::cerr.flush();
+        exit(0);
     }
-#endif
 
-    m_cfg_path = cfg_dir + cfg_filename.data();
-    m_cfg_tmp_path = cfg_dir + cfg_tmp_filename.data();
-    m_token_enc_path = cfg_dir + token_enc_filename.data();
-    m_token_key_path = key_dir + token_key_filename.data();
-    m_log_path = log_dir + log_filename.data();
+    if (show_help) {
+        opt.print_usage(std::cout, argv[0]);
+        exit(0);
+    }
+
+    cfg_dir = path::normalize(cfg_dir, true);
+    key_dir = path::normalize(key_dir, true);
+    log_dir = path::normalize(log_dir, true);
+
+    dir_existence("cfg_dir", cfg_dir);
+    dir_existence("key_dir", key_dir);
+    dir_existence("log_dir", log_dir);
+
+    m_cfg_path       = path::join(cfg_dir, cfg_filename);
+    m_cfg_tmp_path   = path::join(cfg_dir, cfg_tmp_filename);
+    m_token_enc_path = path::join(cfg_dir, token_enc_filename);
+    m_token_key_path = path::join(key_dir, token_key_filename);
+    m_log_path       = path::join(log_dir, log_filename);
+
+    std::cout << "Accepted args:\n "
+              << m_cfg_path << "\n "
+              << m_cfg_tmp_path  << "\n "
+              << m_token_enc_path  << "\n "
+              << m_token_key_path  << "\n "
+              << m_log_path  << "\n";
+    // Позиционные аргументы: res.positionals
 }
