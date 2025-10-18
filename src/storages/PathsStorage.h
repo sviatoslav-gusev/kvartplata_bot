@@ -27,9 +27,9 @@ private:
     static constexpr std::string_view token_key_filename{"kvartplata_bot.key"};
     static constexpr std::string_view log_filename{"kvartplata_bot.log"};
 
-    std::string cfg_dir{"./"}; // = "/var/lib/kvartplata-bot/"; // cfg, token_enc
-    std::string key_dir{"./"}; // = "/etc/kvartplata-bot/";     // token_key
-    std::string log_dir{"./"}; // = "/var/log/kvartplata-bot/"; // log
+    std::string cfg_dir{"./"}; // = "/var/lib/kvartplata_bot/"; // cfg, token_enc
+    std::string key_dir{"./"}; // = "/etc/kvartplata_bot/";     // token_key
+    std::string log_dir{"./"}; // = "/var/log/kvartplata_bot/"; // log
 
     std::string m_cfg_path;
     std::string m_cfg_tmp_path;
