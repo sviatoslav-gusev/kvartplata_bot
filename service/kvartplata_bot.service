@@ -1,0 +1,28 @@
+[Unit]
+Description=Kvartplata Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kvartplata
+Group=kvartplata
+WorkingDirectory=/var/lib/kvartplata_bot
+# CLI флаги под твой PathsStorage:
+ExecStart=/usr/local/bin/kvartplata_bot --key_dir /etc/kvartplata_bot --cfg_dir /var/lib/kvartplata_bot
+
+Restart=always
+RestartSec=5
+
+# Безопасность и нужные права записи
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/kvartplata_bot /etc/kvartplata_bot
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
