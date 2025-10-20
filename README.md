@@ -1,5 +1,7 @@
 ## Scripts for kvartplata_bot service management
 
+To build binary refer to documentation at `release_1` branch
+
 ---
 
 ### `install.sh`
