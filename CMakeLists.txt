@@ -19,6 +19,11 @@ add_executable(kvartplata_bot
     src/storages/TokenStorage.cpp
 )
 
+if (CMAKE_BUILD_TYPE MATCHES "^[Dd]ebug$")
+  target_compile_options(kvartplata_bot PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+  target_link_options(kvartplata_bot PRIVATE -fsanitize=address)
+endif()
+
 # --- Общие зависимости ---
 find_package(Threads REQUIRED)
 find_package(Boost CONFIG REQUIRED COMPONENTS system)  # через CONFIG по возможности
