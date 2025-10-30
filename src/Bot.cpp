@@ -90,7 +90,7 @@ void kbot::Bot::notify_payment(UserID user_id)
         using namespace std::chrono;
         const system_clock::time_point now = system_clock::now();
         const year_month_day now_ymd = {floor<days>(now)};
-        const hh_mm_ss now_hm = hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
+        const minutes now_hm_duration = floor<minutes>(now) - floor<days>(now);
         const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
         const year_month & last_paid_ym = cfg.last_paid_year_month;
         const std::chrono::minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
@@ -103,7 +103,7 @@ void kbot::Bot::notify_payment(UserID user_id)
         else [[likely]] { // Notify today/tomorrow
             const system_clock::time_point signal_today_tp = sys_days{now_ymd} + signal_hm_duration;
 
-            if (now_hm.to_duration() < signal_hm_duration) [[unlikely]] { // Notify today (rare usecase)
+            if (now_hm_duration < signal_hm_duration) [[unlikely]] { // Notify today (rare usecase)
                 m_log.warn("{}: strange call #2. User #{} will be notified today later", __func__, user_id);
                 // signal_today_tp
                 signal_tp = signal_today_tp;
@@ -145,7 +145,7 @@ void kbot::Bot::submit_payment(UserID user_id)
 
         const system_clock::time_point now = system_clock::now();
         const year_month_day now_ymd = {floor<days>(now)};
-        const hh_mm_ss now_hm = hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
+        const minutes now_hm_duration = floor<minutes>(now) - floor<days>(now);
         const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
         const year_month last_paid_ym_before = cfg.last_paid_year_month;
 
@@ -165,7 +165,7 @@ void kbot::Bot::submit_payment(UserID user_id)
         const bool before_payment_dhm =
             now_ymd < signal_this_month_ymd ||
             (now_ymd == signal_this_month_ymd &&
-             now_hm.to_duration() < signal_hm_duration);
+             now_hm_duration < signal_hm_duration);
 
         // paid in prev month, but now is erly to pay
         if (last_paid_ym_before + months{1} == now_ym && before_payment_dhm)
@@ -215,7 +215,7 @@ void kbot::Bot::submit_payment(UserID user_id)
 
 kbot::TaskID kbot::Bot::schedule_payment_notification(UserID user_id, const std::chrono::system_clock::time_point & tp)
 {
-    return m_sch.enqueue_task(tp, user_id, [this, user_id]() {this->notify_payment(user_id);});
+    return m_sch.enqueue_user_task(tp, user_id, [this, user_id]() {this->notify_payment(user_id);});
 }
 
 void kbot::Bot::unschedule_payment_notification_for(UserID user_id)
@@ -234,7 +234,7 @@ void kbot::Bot::unschedule_payment_notification_for(UserID user_id)
         cfg.scheduled_payment_task_id.clear();
     }
 
-    m_sch.delete_task(task_id_to_delete);
+    m_sch.delete_user_task(task_id_to_delete);
 }
 
 void kbot::Bot::load_bot_commands()
@@ -324,12 +324,11 @@ void kbot::Bot::initial_user_schedule(UserConfig & cfg)
         using namespace std::chrono;
         const system_clock::time_point now = system_clock::now();
         const year_month_day now_ymd = {floor<days>(now)};
-        const hh_mm_ss now_hm = hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
+        const minutes now_hm_duration = floor<minutes>(now) - floor<days>(now);
         const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
         const year_month & last_paid_ym = cfg.last_paid_year_month;
 
         const minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
-        const minutes now_hm_duration = duration_cast<minutes>(now_hm.to_duration());
 
         // A. paid this month? Schedule next month
         if (last_paid_ym == now_ym)

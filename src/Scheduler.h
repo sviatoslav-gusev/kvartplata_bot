@@ -38,10 +38,11 @@ public:
     ~Scheduler();
 
     bool has_task(TaskID task_id);
-    [[nodiscard("Save TaskID")]] TaskID enqueue_task(TimePoint time_point, UserID user_id, std::function<void()> callback);
-    void delete_task(TaskID task_id);
+    [[nodiscard("Save TaskID")]] TaskID enqueue_user_task(TimePoint time_point, UserID user_id, std::function<void()> callback);
+    TaskID enqueue_system_task(TimePoint time_point, std::function<void()> callback);
+    void delete_user_task(TaskID task_id);
 
-    void delete_all_tasks_for(UserID user_id);
+    void delete_all_user_tasks_for(UserID user_id);
 
 private:
     TaskID gen_task_id();

@@ -39,7 +39,7 @@ private:
 
     [[nodiscard("Save TaskID")]] TaskID schedule_payment_notification(UserID user_id, const std::chrono::system_clock::time_point & tp);
     void unschedule_payment_notification_for(UserID user_id);
-    inline void unschedule_all_notifications_for(UserID user_id) { m_sch.delete_all_tasks_for(user_id); }
+    inline void unschedule_all_notifications_for(UserID user_id) { m_sch.delete_all_user_tasks_for(user_id); }
 private:
     Logger & m_log;
 

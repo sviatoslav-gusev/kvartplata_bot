@@ -24,7 +24,20 @@ bool kbot::Scheduler::has_task(TaskID task_id)
     return m_storage.contains(task_id);
 }
 
-kbot::TaskID kbot::Scheduler::enqueue_task(TimePoint time_point, UserID user_id, std::function<void()> callback)
+kbot::TaskID kbot::Scheduler::enqueue_system_task(TimePoint time_point, std::function<void()> callback)
+{
+    TaskID task_id;
+    {
+        std::lock_guard lk(m_mutex);
+        task_id = gen_task_id();
+        m_storage.emplace(task_id, Task(task_id, time_point, UserID{}, callback));
+        m_time_index.emplace(time_point, task_id);
+    }
+    m_cv.notify_one();
+    return task_id;
+}
+
+kbot::TaskID kbot::Scheduler::enqueue_user_task(TimePoint time_point, UserID user_id, std::function<void()> callback)
 {
     TaskID task_id;
     {
@@ -38,7 +51,7 @@ kbot::TaskID kbot::Scheduler::enqueue_task(TimePoint time_point, UserID user_id,
     return task_id;
 }
 
-void kbot::Scheduler::delete_task(TaskID task_id)
+void kbot::Scheduler::delete_user_task(TaskID task_id)
 {
     if (task_id.empty()) {
         m_log.warn("{}: tried to remove task #{}, but it does not exists", __func__, task_id);
@@ -70,7 +83,7 @@ void kbot::Scheduler::delete_task(TaskID task_id)
     m_user_id_index[task.user_id].erase(task.task_id);
 }
 
-void kbot::Scheduler::delete_all_tasks_for(UserID user_id)
+void kbot::Scheduler::delete_all_user_tasks_for(UserID user_id)
 {
     std::lock_guard lk(m_mutex);
 

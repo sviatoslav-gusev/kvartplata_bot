@@ -26,9 +26,9 @@ public:
 private:
     PathsStorage m_paths;
     Logger m_log;
-    ConfigStorage m_cfg;
-
     Scheduler m_sch;
+
+    ConfigStorage m_cfg;
     Bot m_bot;
 };
 
