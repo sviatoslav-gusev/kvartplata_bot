@@ -23,14 +23,56 @@ kbot::Bot::Bot(Logger & log, Application & app, Scheduler & sch, std::string tok
     load_bot_commands();
 }
 
-void kbot::Bot::notify_payment(UserID user_id)
+kbot::UserStatus kbot::Bot::get_user_status(UserID user_id)
 {
-    if (!m_app.cfg().has(user_id)) {
-        m_log.error("{}: no config", __func__);
-        return;
+    ChatID chat_id;
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_app.cfg().has(user_id)) {
+            m_log.error("{}: not exists in ConfigStorage", __func__);
+            return UserStatus::NotLoaded;
+        }
     }
 
-    m_bot.getApi().sendMessage(m_app.cfg().get(user_id).chat_id.get(),
+    try {
+        const UserStatus status = m_bot.getApi().blockedByUser(chat_id.get())
+                                ? UserStatus::LoadedButBannedUs
+                                : UserStatus::Loaded;
+        return status;
+    }
+    catch (const std::exception& e) {
+        m_log.error("{}: blockedByUser({}) failed: {}", __func__, chat_id, e.what());
+        return UserStatus::Unknown;
+    }
+}
+
+void kbot::Bot::notify_payment(UserID user_id)
+{
+    ChatID chat_id;
+    switch (get_user_status(user_id)) {
+    case UserStatus::Loaded: {
+        m_log.debug("{}: user #{} received notification.", __func__, user_id);
+        std::scoped_lock lk(m_mutex);
+        chat_id = m_app.cfg().get(user_id).chat_id;
+        break;
+    }
+    case UserStatus::LoadedButBannedUs: {
+        m_log.wow("{}: user #{} banned us! Remove his data.", __func__, user_id);
+        unschedule_all_notifications_for(user_id);
+        std::scoped_lock lock(m_mutex);
+        m_app.cfg().remove(user_id);
+        m_app.cfg().set_need_to_rewrite(true);
+        return;
+    }
+    case UserStatus::Unknown:
+    case UserStatus::NotLoaded: {
+        m_log.error("{}: strange call, because user #{} not exists in ConfigStorage", __func__, user_id);
+        return;
+    }
+    }
+
+
+    m_bot.getApi().sendMessage(chat_id.get(),
                                std::format("Hi, #{}.\n"
                                            "Albanian reminder.\n"
                                            "Send \"Y\" if you paid for current month.\n",
@@ -38,105 +80,136 @@ void kbot::Bot::notify_payment(UserID user_id)
     m_log.debug("{}: User #{} is noticed now", __func__, user_id);
 
     /********** SCHEDULE NEXT **********/
+    TimePoint signal_tp;
+    {
+        std::scoped_lock lk(m_mutex);
+
+        UserConfig & cfg = m_app.cfg().get(user_id);
+        cfg.scheduled_payment_task_id.clear();
+
+        using namespace std::chrono;
+        const system_clock::time_point now = system_clock::now();
+        const year_month_day now_ymd = {floor<days>(now)};
+        const hh_mm_ss now_hm = hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
+        const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
+        const year_month & last_paid_ym = cfg.last_paid_year_month;
+        const std::chrono::minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
+
+        if (last_paid_ym == now_ym) [[unlikely]] { // Schedule to next month (rare usecase: next month scheduling should be triggered by submit_payment)
+            m_log.warn("{}: strange call #1. User #{} will be notified next month", __func__, user_id);
+            // next_month_tp
+            signal_tp = sys_days{util::make_valid_ymd(now_ym + months{1}, cfg.signal_day)} + signal_hm_duration;
+        }
+        else [[likely]] { // Notify today/tomorrow
+            const system_clock::time_point signal_today_tp = sys_days{now_ymd} + signal_hm_duration;
+
+            if (now_hm.to_duration() < signal_hm_duration) [[unlikely]] { // Notify today (rare usecase)
+                m_log.warn("{}: strange call #2. User #{} will be notified today later", __func__, user_id);
+                // signal_today_tp
+                signal_tp = signal_today_tp;
+            }
+            else [[likely]] { // Notify tomorrow
+                m_log.debug("{}: User #{} will be noticed tomorrow at {} UTC again", __func__, user_id, cfg.signal_hour_minute);
+                // signal_tomorrow_tp
+                signal_tp = signal_today_tp + days{1};
+            }
+        }
+    }
+
+    const TaskID task_id = schedule_payment_notification(user_id, signal_tp);
+
     std::scoped_lock lk(m_mutex);
-
-    UserConfig & cfg = m_app.cfg().get(user_id);
-    cfg.scheduled_payment_task_id.clear();
-
-    using namespace std::chrono;
-    const system_clock::time_point now = system_clock::now();
-    const year_month_day now_ymd = {floor<days>(now)};
-    const hh_mm_ss now_hm = std::chrono::hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
-    const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
-    const year_month & last_paid_ym = cfg.last_paid_year_month;
-    const std::chrono::minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
-
-    if (last_paid_ym == now_ym) [[unlikely]] { // Schedule to next month (rare usecase: next month scheduling should be triggered by submit_payment)
-        m_log.warn("{}: strange call #1. User #{} will be notified next month", __func__, user_id);
-        const system_clock::time_point next_month_tp =
-            sys_days{util::make_valid_ymd(now_ym + months{1}, cfg.signal_day)} + signal_hm_duration;
-        cfg.scheduled_payment_task_id = schedule_payment_notification(user_id, next_month_tp);
-    }
-    else [[likely]] { // Notify today/tomorrow
-        const system_clock::time_point signal_today_tp = sys_days{now_ymd} + signal_hm_duration;
-
-        if (now_hm.to_duration() < signal_hm_duration) [[unlikely]] { // Notify today (rare usecase)
-            m_log.warn("{}: strange call #2. User #{} will be notified today later", __func__, user_id);
-            cfg.scheduled_payment_task_id = schedule_payment_notification(user_id, signal_today_tp);
-        }
-        else [[likely]] { // Notify tomorrow
-            m_log.debug("{}: User #{} will be noticed tomorrow at {} UTC again", __func__, user_id, cfg.signal_hour_minute);
-            cfg.scheduled_payment_task_id = schedule_payment_notification(user_id, signal_today_tp + days{1});
-        }
-    }
+    m_app.cfg().get(user_id).scheduled_payment_task_id = task_id;
+    m_app.cfg().set_need_to_rewrite(true);
 }
 
 void kbot::Bot::submit_payment(UserID user_id)
 {
-    if (!m_app.cfg().has(user_id)) {
-        m_log.error("{}: no config", __func__);
-        return;
-    }
-
-    std::scoped_lock lk(m_mutex);
-
-    UserConfig & cfg = m_app.cfg().get(user_id);
-    const ChatID chat_id = cfg.chat_id;
+    m_log.debug("{}: start. For user #{}", __func__, user_id);
 
     using namespace std::chrono;
-    const system_clock::time_point now = system_clock::now();
-    const year_month_day now_ymd = {floor<days>(now)};
-    const hh_mm_ss now_hm = std::chrono::hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
-    const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
-    const year_month & last_paid_ym = cfg.last_paid_year_month;
-
-    // A. paid this month?
-    if (last_paid_ym == now_ym)
+    ChatID chat_id;
+    year_month_day signal_ymd;
+    hh_mm_ss<minutes> signal_hm;
+    system_clock::time_point signal_tp;
     {
-        m_log.debug("{}: User #{} tried to pay for current month again", __func__, user_id);
-        m_bot.getApi().sendMessage(chat_id.get(), "You already paid this month!");
-        return;
+        std::scoped_lock lk(m_mutex);
+
+        if (!m_app.cfg().has(user_id)) {
+            m_log.error("{}: no config for user #{}. (Case 1)", __func__, user_id);
+            return;
+        }
+
+        UserConfig & cfg = m_app.cfg().get(user_id);
+        chat_id = cfg.chat_id;
+
+        const system_clock::time_point now = system_clock::now();
+        const year_month_day now_ymd = {floor<days>(now)};
+        const hh_mm_ss now_hm = hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
+        const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
+        const year_month last_paid_ym_before = cfg.last_paid_year_month;
+
+        // A. paid this month?
+        if (last_paid_ym_before == now_ym)
+        {
+            m_log.debug("{}: User #{} tried to pay for current month again", __func__, user_id);
+            m_bot.getApi().sendMessage(chat_id.get(), "You already paid this month!");
+            return;
+        }
+
+        // B. paid prev month, but there is too early to pay this month?
+        year_month_day signal_this_month_ymd = util::make_valid_ymd(now_ym, cfg.signal_day);
+        signal_hm = cfg.signal_hour_minute;
+        const minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
+
+        const bool before_payment_dhm =
+            now_ymd < signal_this_month_ymd ||
+            (now_ymd == signal_this_month_ymd &&
+             now_hm.to_duration() < signal_hm_duration);
+
+        // paid in prev month, but now is erly to pay
+        if (last_paid_ym_before + months{1} == now_ym && before_payment_dhm)
+        {
+            m_log.debug("{}: User #{} tried to pay for this month too early.", __func__, user_id);
+            m_bot.getApi().sendMessage(cfg.chat_id.get(),
+                                       std::format("It is early to pay this month!\n"
+                                                   "I will remind you at {}, {} UTC\n",
+                                                   signal_this_month_ymd,
+                                                   signal_hm));
+            return;
+        }
+
+        /********** SCHEDULE NEXT **********/
+        cfg.last_paid_year_month = now_ym;
+
+        signal_ymd = before_payment_dhm
+                   ? now_ymd    // this_month_ymd
+                   : util::make_valid_ymd(now_ym + months{1}, cfg.signal_day);  // next_month_ymd
+
+        signal_tp = sys_days{signal_ymd} + signal_hm_duration;
     }
 
-    // B. paid prev month, but there is too early to pay this month?
-    year_month_day signal_this_month_ymd = util::make_valid_ymd(now_ym, cfg.signal_day);
-    const hh_mm_ss<minutes> & signal_hm = cfg.signal_hour_minute;
-    const std::chrono::minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
+    unschedule_payment_notification_for(user_id);
+    const TaskID task_id = schedule_payment_notification(user_id, signal_tp);
 
-    const bool before_payment_dhm =
-        now_ymd < signal_this_month_ymd ||
-         (now_ymd == signal_this_month_ymd &&
-          now_hm.to_duration() < signal_hm_duration);
-
-    // paid in prev month, but now is erly to pay
-    if (last_paid_ym + months{1} == now_ym && before_payment_dhm)
     {
-        m_log.debug("{}: User #{} tried to pay for this month too early.", __func__, user_id);
-        m_bot.getApi().sendMessage(chat_id.get(),
-                                   std::format("It is early to pay this month!\n"
-                                               "I will remind you at {}, {} UTC\n",
-                                                signal_this_month_ymd,
-                                                signal_hm));
-        return;
+        std::scoped_lock lk(m_mutex);
+
+        if (!m_app.cfg().has(user_id)) {
+            m_log.error("{}: no config for user #{}. (Case 2)", __func__, user_id);
+            return;
+        }
+
+        m_app.cfg().get(user_id).scheduled_payment_task_id = task_id;
+        m_app.cfg().set_need_to_rewrite(true);
     }
 
-    /********** SCHEDULE NEXT **********/
-    cfg.last_paid_year_month = now_ym;
-
-    if (!before_payment_dhm) {  // this month is too late to notice, so assume it is done and next notice will be in next month
-        signal_this_month_ymd = util::make_valid_ymd(now_ym + months{1}, cfg.signal_day);
-    }
-
-    const system_clock::time_point signal_tp = sys_days{signal_this_month_ymd} + signal_hm_duration;
-
-    unschedule_payment_notification(user_id);
-    cfg.scheduled_payment_task_id = schedule_payment_notification(user_id, signal_tp);
-
-    m_log.debug("{}: User #{} successfully paid for current month", __func__, user_id);
+    m_log.debug("{}: User #{} successfully paid for current month. Next scheduled to {}, {}",
+                __func__, user_id, signal_ymd, signal_hm);
     m_bot.getApi().sendMessage(chat_id.get(),
                                std::format("Great!\n"
                                            "Your next notification will be called at {}, {} UTC\n",
-                                           signal_this_month_ymd,
+                                           signal_ymd,
                                            signal_hm));
 }
 
@@ -145,21 +218,23 @@ kbot::TaskID kbot::Bot::schedule_payment_notification(UserID user_id, const std:
     return m_sch.enqueue_task(tp, user_id, [this, user_id]() {this->notify_payment(user_id);});
 }
 
-void kbot::Bot::unschedule_payment_notification(UserID user_id)
+void kbot::Bot::unschedule_payment_notification_for(UserID user_id)
 {
-//    std::scoped_lock lk(m_mutex);
-
-    if (!m_app.cfg().has(user_id)) {
-        return;
+    TaskID task_id_to_delete;
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_app.cfg().has(user_id)) {
+            return;
+        }
+        UserConfig & cfg = m_app.cfg().get(user_id);
+        if (cfg.scheduled_payment_task_id.empty()) {
+            return;
+        }
+        task_id_to_delete = cfg.scheduled_payment_task_id;
+        cfg.scheduled_payment_task_id.clear();
     }
 
-    UserConfig & cfg = m_app.cfg().get(user_id);
-
-    if (cfg.scheduled_payment_task_id.empty()) {
-        return;
-    }
-    m_sch.delete_task(cfg.scheduled_payment_task_id);
-    cfg.scheduled_payment_task_id.clear();
+    m_sch.delete_task(task_id_to_delete);
 }
 
 void kbot::Bot::load_bot_commands()
@@ -168,30 +243,57 @@ void kbot::Bot::load_bot_commands()
         const UserID user_id{msg->from->id};
         const ChatID chat_id{msg->chat->id};
 
-        if(m_app.cfg().has(user_id)) // User duplicated start
+        using namespace std::chrono;
+        bool user_is_duplicated = false;
+        day signal_day;
+        hh_mm_ss<minutes> signal_hour_minute;
+        {
+            std::scoped_lock lock(m_mutex);
+            user_is_duplicated = m_app.cfg().has(user_id);
+
+            if (!user_is_duplicated)
+            {
+                UserConfig new_user_config(user_id, chat_id);
+                signal_day = new_user_config.signal_day;
+                signal_hour_minute = new_user_config.signal_hour_minute;
+
+                m_app.cfg().set(new_user_config);
+                initial_user_schedule(new_user_config);
+            }
+        }
+
+        if (user_is_duplicated)
         {
             m_log.wow("onCommand(\"start\"): /start for existing user #{}", user_id);
             m_bot.getApi().sendMessage(chat_id.get(),
                                        std::format("Hi, #{}!\n"
                                                    "Your account is alreary running.\n",
                                                    user_id));
-            return;
         }
-
-        UserConfig new_user_config(user_id, chat_id);
-        m_app.cfg().set(new_user_config);
-        initial_user_schedule(new_user_config);
-
-        m_log.wow("onCommand(\"start\"): /start for new user #{}", user_id);
-        m_bot.getApi().sendMessage(chat_id.get(),
-                                   std::format("Welcome, #{}!\n"
-                                               "Your closest notification will be at closest {} day in {}\n",
-                                               user_id,
-                                               new_user_config.signal_day,
-                                               new_user_config.signal_hour_minute));
+        else
+        {
+            m_log.wow("onCommand(\"start\"): /start for new user #{}", user_id);
+            m_bot.getApi().sendMessage(chat_id.get(),
+                                       std::format("Welcome, #{}!\n"
+                                                   "Your closest notification will be at closest {} day in {}\n",
+                                                   user_id,
+                                                   signal_day,
+                                                   signal_hour_minute));
+        }
     });
+
+    m_bot.getEvents().onCommand("stop", [this](TgBot::Message::Ptr msg) {
+        const UserID user_id{msg->from->id};
+        m_log.wow("{}: user #{} stopped us", __func__, user_id);
+        unschedule_all_notifications_for(user_id);
+        std::scoped_lock lock(m_mutex);
+        m_app.cfg().remove(user_id);
+        m_app.cfg().set_need_to_rewrite(true);
+        return;
+    });
+
     m_bot.getEvents().onAnyMessage([this](TgBot::Message::Ptr msg) {
-        if (StringTools::startsWith(msg->text, "/start")) {
+        if (StringTools::startsWith(msg->text, "/start") || StringTools::startsWith(msg->text, "/stop")) {
             return;
         }
         m_log.wow("onAnyMessage(): user #{} wrote: {}", msg->from->id, msg->text);
@@ -207,53 +309,65 @@ void kbot::Bot::load_bot_commands()
 
 void kbot::Bot::initial_user_schedule(UserConfig & cfg)
 {
-    m_log.debug("{}: start. For user #{}", __func__, cfg.user_id);
+    const UserID user_id = cfg.user_id;
+    m_log.debug("{}: start. For user #{}", __func__, user_id);
 
-    std::scoped_lock lk(m_mutex);
-
-    using namespace std::chrono;
-    const system_clock::time_point now = system_clock::now();
-    const year_month_day now_ymd = {floor<days>(now)};
-    const hh_mm_ss now_hm = std::chrono::hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
-    const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
-    const year_month & last_paid_ym = cfg.last_paid_year_month;
-
-    const std::chrono::minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
-    const std::chrono::minutes now_hm_duration = duration_cast<minutes>(now_hm.to_duration());
-
-    // A. paid this month? Schedule next month
-    if (last_paid_ym == now_ym)
+    TimePoint signal_tp;
     {
-        const system_clock::time_point signal_next_month_tp =
-            sys_days{util::make_valid_ymd(now_ym + months{1}, cfg.signal_day)} + signal_hm_duration;
-        cfg.scheduled_payment_task_id = schedule_payment_notification(cfg.user_id, signal_next_month_tp);
-        return;
-    }
+        std::scoped_lock lk(m_mutex);
 
-    const year_month_day signal_this_month_ymd = util::make_valid_ymd(now_ym, cfg.signal_day);
+        if (const TaskID task_id = cfg.scheduled_payment_task_id; !task_id.empty()) {
+            m_log.warn("{}: User #{} already has scheduled task #{}", __func__, user_id, task_id);
+            return;
+        }
 
-    const bool before_payment_dhm =
-        now_ymd < signal_this_month_ymd ||
-         (now_ymd == signal_this_month_ymd &&
-          now_hm_duration < signal_hm_duration);
+        using namespace std::chrono;
+        const system_clock::time_point now = system_clock::now();
+        const year_month_day now_ymd = {floor<days>(now)};
+        const hh_mm_ss now_hm = hh_mm_ss<minutes>{floor<minutes>(now) - floor<days>(now)};
+        const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
+        const year_month & last_paid_ym = cfg.last_paid_year_month;
 
-    // B. paid prev month, and there payday of this month had not came yet
-    if (last_paid_ym + months{1} == now_ym && before_payment_dhm)
-    {
-        const system_clock::time_point signal_this_month_tp =
-            sys_days{signal_this_month_ymd} + signal_hm_duration;
-        cfg.scheduled_payment_task_id = schedule_payment_notification(cfg.user_id, signal_this_month_tp);
-        return;
-    }
+        const minutes signal_hm_duration = duration_cast<minutes>(cfg.signal_hour_minute.to_duration());
+        const minutes now_hm_duration = duration_cast<minutes>(now_hm.to_duration());
 
-    // C. time to pay. Remind today or tomorrow
-    const system_clock::time_point signal_today_tp = sys_days{now_ymd} + signal_hm_duration;
+        // A. paid this month? Schedule next month
+        if (last_paid_ym == now_ym)
+        {
+            // signal_next_month_tp
+            signal_tp = sys_days{util::make_valid_ymd(now_ym + months{1}, cfg.signal_day)} + signal_hm_duration;
+        }
+        else
+        {
+            const year_month_day signal_this_month_ymd = util::make_valid_ymd(now_ym, cfg.signal_day);
 
-    if (now_hm_duration < signal_hm_duration) { // Notify today
-        cfg.scheduled_payment_task_id = schedule_payment_notification(cfg.user_id, signal_today_tp);
-    }
-    else { // Notify tomorrow
-        cfg.scheduled_payment_task_id = schedule_payment_notification(cfg.user_id, signal_today_tp + days{1});
+            const bool before_payment_dhm =
+                now_ymd < signal_this_month_ymd ||
+                (now_ymd == signal_this_month_ymd && now_hm_duration < signal_hm_duration);
+
+            // B. paid prev month, and there payday of this month had not came yet
+            if (last_paid_ym + months{1} == now_ym && before_payment_dhm)
+            {
+                // signal_this_month_tp
+                signal_tp = sys_days{signal_this_month_ymd} + signal_hm_duration;
+            }
+            else
+            {
+                // C. time to pay. Remind today or tomorrow
+                const system_clock::time_point signal_today_tp = sys_days{now_ymd} + signal_hm_duration;
+
+                if (now_hm_duration < signal_hm_duration) {
+                    // signal_today
+                    signal_tp = signal_today_tp;
+                }
+                else {
+                    // signal_tomorrow
+                    signal_tp = signal_today_tp + days{1};
+                }
+            }
+        }
+
+        cfg.scheduled_payment_task_id = schedule_payment_notification(cfg.user_id, signal_tp);
     }
 
     m_log.debug("{}: end", __func__);

@@ -13,9 +13,22 @@ kbot::Application::Application(int argc, char** argv)
 {
     m_log.debug("{}: start", __func__);
     try {
-        for (auto & [user_id, user_cfg] : m_cfg.all())
+        std::unordered_map<UserID, UserConfig> & configs = m_cfg.all();
+
+        for (auto it = configs.begin(); it != configs.end();)
         {
-            m_bot.initial_user_schedule(user_cfg);
+            auto& [user_id, user_cfg] = *it;
+
+            if (m_bot.get_user_status(user_id) == UserStatus::Loaded)
+            {
+                m_bot.initial_user_schedule(user_cfg);
+                ++it;
+                continue;
+            }
+
+            // UserStatus::Unknown,  UserStatus::NotLoaded,  UserStatus::LoadedButBannedUs
+            it = configs.erase(it);
+            m_cfg.set_need_to_rewrite(true);
         }
     }
     catch (const std::runtime_error & e)
