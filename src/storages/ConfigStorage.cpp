@@ -4,9 +4,10 @@
 #include <exception>
 #include <stdexcept>
 
-kbot::ConfigStorage::ConfigStorage(const PathsStorage & paths, Logger & log)
+kbot::ConfigStorage::ConfigStorage(const PathsStorage & paths, Logger & log, Scheduler & sch)
     : m_paths(paths)
     , m_log(log)
+    , m_sch(sch)
 {
     m_log.debug("{}: start", __func__);
     try {
@@ -104,6 +105,34 @@ void kbot::ConfigStorage::save_configs()
     }
 
     m_log.debug("{}: end", __func__);
+}
+
+void kbot::ConfigStorage::schedule_configs_synchronization()
+{
+    m_log.debug("{}: start", __func__);
+
+    using namespace std::chrono;
+    const system_clock::time_point now = system_clock::now();
+    const sys_days now_ymd_duration = floor<days>(now);
+    const minutes now_hm_duration = floor<minutes>(now) - floor<days>(now);
+
+    TimePoint tp;
+    if (now_hm_duration > m_sync_hm.to_duration()) {
+        tp = now_ymd_duration + days{1} + m_sync_hm.to_duration();
+    }
+    else {
+        tp = now_ymd_duration + m_sync_hm.to_duration();
+    }
+
+    m_sch.enqueue_system_task(tp, [this](){
+        if (this->get_need_to_rewrite()) {
+            this->save_configs();
+            this->set_need_to_rewrite(false);
+        }
+        this->schedule_configs_synchronization();
+    });
+
+    m_log.debug("{}: end. Daily configs saving is scheduled to closest {}", __func__, m_sync_hm);
 }
 
 nlohmann::json kbot::ConfigStorage::serialize() const

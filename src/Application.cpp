@@ -7,8 +7,8 @@
 kbot::Application::Application(int argc, char** argv)
     : m_paths(argc, argv)
     , m_log(m_paths)
-    , m_cfg(m_paths, m_log)
     , m_sch(m_log)
+    , m_cfg(m_paths, m_log, m_sch)
     , m_bot(m_log, *this, m_sch, TokenStorage(m_paths, m_log).load_token())
 {
     m_log.debug("{}: start", __func__);
@@ -30,6 +30,8 @@ kbot::Application::Application(int argc, char** argv)
             it = configs.erase(it);
             m_cfg.set_need_to_rewrite(true);
         }
+
+        m_cfg.schedule_configs_synchronization();
     }
     catch (const std::runtime_error & e)
     {
