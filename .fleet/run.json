@@ -1,59 +1,88 @@
 {
   "configurations": [
     {
-      "name": "CMake Configure (Debug)",
+      "name": "CMake Configure (Win Debug)",
       "type": "command",
       "program": "cmake",
-      "args": [
-        "-S", "$PROJECT_DIR$",
-        "-B", "$PROJECT_DIR$/build/debug",
-        "-G", "Ninja",
-        "-DCMAKE_BUILD_TYPE=Debug",
-        "-DCMAKE_CXX_COMPILER=clang++",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
-      ],
+      "args": ["--preset", "win-clang-ninja-debug"],
       "workingDir": "$PROJECT_DIR$"
     },
     {
-      "name": "CMake Configure (Debug) - Win",
-      "type": "command",
-      "program": "$USER_HOME$/scoop/apps/cmake/current/bin/cmake.exe",
-      "args": [
-        "--preset", "win-clang-ninja"
-      ],
-      "workingDir": "$PROJECT_DIR$"
-    },
-    {
-      "name": "Build (Debug) - Win",
-      "type": "command",
-      "program": "$USER_HOME$/scoop/apps/cmake/current/bin/cmake.exe",
-      "args": ["--build", "--preset", "build", "--parallel"],
-      "dependsOn": ["CMake Configure (Debug) - Win"],
-      "workingDir": "$PROJECT_DIR$"
-    },
-    {
-      "name": "Build (Debug)",
+      "name": "CMake Build (Win Debug)",
       "type": "command",
       "program": "cmake",
-      "args": ["--build", "$PROJECT_DIR$/build/debug", "--target", "kvartplata_bot"],
-      "dependsOn": ["CMake Configure (Debug)"],
+      "args": ["--build", "$PROJECT_DIR$/build/win-clang-debug", "--config", "Debug", "-j"],
       "workingDir": "$PROJECT_DIR$"
     },
     {
-      "name": "Run (Debug)",
+      "name": "Run (Win Debug, ASan)",
       "type": "command",
-      "program": "$PROJECT_DIR$/build/debug/kvartplata_bot",
-      "dependsOn": ["Build (Debug)"],
+      "program": "cmd",
+      "args": ["/C", "set ASAN_OPTIONS=halt_on_error=1 && \"$PROJECT_DIR$/build/win-clang-debug/kvartplata_bot.exe\""],
       "workingDir": "$PROJECT_DIR$"
     },
     {
-      "name": "Run (Debug) (unbuffered)",
+      "name": "CMake Configure (Win Release)",
       "type": "command",
-      "program": "bash",
-      "args": ["-lc", "cd \"$PROJECT_DIR$/build/debug\" && stdbuf -o0 -e0 ./kvartplata_bot 2>&1 | cat"],
-      "dependsOn": ["Build (Debug)"],
+      "program": "cmake",
+      "args": ["--preset", "win-clang-ninja-release"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "CMake Build (Win Release)",
+      "type": "command",
+      "program": "cmake",
+      "args": ["--build", "$PROJECT_DIR$/build/win-clang-release", "--config", "Release", "-j"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Run (Win Release)",
+      "type": "command",
+      "program": "$PROJECT_DIR$/build/win-clang-release/kvartplata_bot.exe",
+      "args": [],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "CMake Configure (Linux Debug)",
+      "type": "command",
+      "program": "cmake",
+      "args": ["--preset", "linux-clang-ninja-debug"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "CMake Build (Linux Debug)",
+      "type": "command",
+      "program": "cmake",
+      "args": ["--build", "$PROJECT_DIR$/build/linux-clang-debug", "--config", "Debug", "-j"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Run (Linux Debug, ASan)",
+      "type": "command",
+      "program": "/usr/bin/env",
+      "args": ["ASAN_OPTIONS=halt_on_error=1:detect_leaks=0", "$PROJECT_DIR$/build/linux-clang-debug/kvartplata_bot"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "CMake Configure (Linux Release)",
+      "type": "command",
+      "program": "cmake",
+      "args": ["--preset", "linux-clang-ninja-release"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "CMake Build (Linux Release)",
+      "type": "command",
+      "program": "cmake",
+      "args": ["--build", "$PROJECT_DIR$/build/linux-clang-release", "--config", "Release", "-j"],
+      "workingDir": "$PROJECT_DIR$"
+    },
+    {
+      "name": "Run (Linux Release)",
+      "type": "command",
+      "program": "$PROJECT_DIR$/build/linux-clang-release/kvartplata_bot",
+      "args": [],
       "workingDir": "$PROJECT_DIR$"
     }
-
   ]
 }
