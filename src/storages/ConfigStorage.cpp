@@ -201,3 +201,15 @@ const kbot::UserConfig & kbot::ConfigStorage::get(UserID user_id) const
         exit(0);
     }
 }
+
+bool kbot::ConfigStorage::get_need_to_rewrite() const
+{
+    m_log.debug("{}: {}", __func__, m_modified_but_not_written_to_file_yet);
+    return m_modified_but_not_written_to_file_yet;
+}
+
+void kbot::ConfigStorage::set_need_to_rewrite(bool status)
+{
+    m_log.debug("{}: {}", __func__, status);
+    m_modified_but_not_written_to_file_yet = status;
+}

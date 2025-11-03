@@ -31,8 +31,8 @@ class ConfigStorage
     UserConfig & get(UserID user_id);
     const UserConfig & get(UserID user_id) const;
 
-    inline bool get_need_to_rewrite() const { return m_modified_but_not_written_to_file_yet; }
-    inline void set_need_to_rewrite(bool status) { m_modified_but_not_written_to_file_yet = status; }
+    bool get_need_to_rewrite() const;
+    void set_need_to_rewrite(bool status);
 
     void schedule_configs_synchronization();
 private:

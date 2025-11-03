@@ -32,6 +32,9 @@ kbot::TaskID kbot::Scheduler::enqueue_system_task(TimePoint time_point, std::fun
         task_id = gen_task_id();
         m_storage.emplace(task_id, Task(task_id, time_point, UserID{}, callback));
         m_time_index.emplace(time_point, task_id);
+
+        // TODO: maybe remove later
+        m_log.debug("{} after: {}", __func__, *this);
     }
     m_cv.notify_one();
     return task_id;
@@ -46,6 +49,9 @@ kbot::TaskID kbot::Scheduler::enqueue_user_task(TimePoint time_point, UserID use
         m_storage.emplace(task_id, Task(task_id, time_point, user_id, callback));
         m_user_id_index[user_id].insert(task_id);
         m_time_index.emplace(time_point, task_id);
+
+        // TODO: maybe remove later
+        m_log.debug("{} after: {}", __func__, *this);
     }
     m_cv.notify_one();
     return task_id;
@@ -128,6 +134,8 @@ void kbot::Scheduler::run()
 {
     m_log.debug("{}: start", __func__);
     while (!m_stop) {
+        m_log.debug("{} triggered", __func__);
+
         std::unique_lock lk(m_mutex);
 
         if (m_time_index.empty()) {
@@ -149,7 +157,14 @@ void kbot::Scheduler::run()
             // Extract task and erase indices
             const Task task = std::move(m_storage.extract(/*TaskID*/ closest_action_it->second).mapped());
             m_time_index.erase(closest_action_it);
-            m_user_id_index[task.user_id].erase(task.task_id);
+
+            if (!task.user_id.empty() && m_user_id_index.contains(task.user_id)) {
+                m_user_id_index[task.user_id].erase(task.task_id);
+            }
+
+            // TODO: Maybe remove later
+            m_log.debug("{} executed: ", __func__, task);
+            m_log.debug("{} scheduler after execution: ", __func__, *this);
 
             // Call callback
             lk.unlock();
