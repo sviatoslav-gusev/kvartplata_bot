@@ -51,3 +51,27 @@ private:
 };
 
 } // namespace kbot
+
+template <>
+struct std::formatter<kbot::UserStatus> : std::formatter<std::string_view>
+{
+    constexpr auto parse(std::format_parse_context & ctx) { return ctx.begin(); }
+
+    template <class FormatContext>
+    auto format(const kbot::UserStatus & status, FormatContext & ctx) const
+    {
+        std::string_view s;
+
+        switch (status)
+        {
+        case kbot::UserStatus::Loaded:            s = "Loaded";            break;
+        case kbot::UserStatus::NotLoaded:         s = "NotLoaded";         break;
+        case kbot::UserStatus::LoadedButBannedUs: s = "LoadedButBannedUs"; break;
+
+        case kbot::UserStatus::Unknown:
+        default:                                  s = "Unknown";
+        }
+
+        return std::formatter<std::string_view>::format(s, ctx);
+    }
+};

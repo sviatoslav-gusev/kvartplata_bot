@@ -40,6 +40,8 @@ public:
     Scheduler(Logger & log);
     ~Scheduler();
 
+    void run();
+
     bool has_task(TaskID task_id);
     [[nodiscard("Save TaskID")]] TaskID enqueue_user_task(TimePoint time_point, UserID user_id, std::function<void()> callback);
     TaskID enqueue_system_task(TimePoint time_point, std::function<void()> callback);
@@ -50,7 +52,6 @@ public:
 private:
     TaskID gen_task_id();
 
-    void run();
     void stop();
 
 private:
@@ -73,10 +74,10 @@ private:
 template <>
 struct std::formatter<kbot::Scheduler::Task> : std::formatter<std::string_view>
 {
-    constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+    constexpr auto parse(std::format_parse_context & ctx) { return ctx.begin(); }
 
     template <class FormatContext>
-    auto format(kbot::Scheduler::Task const& t, FormatContext& ctx) const
+    auto format(const kbot::Scheduler::Task & t, FormatContext & ctx) const
     {
         std::string s = std::format("Task(id={}, at={:%F %T}, user={})", t.task_id, t.time_point, t.user_id);
         return std::formatter<std::string_view>::format(s, ctx);
@@ -87,7 +88,7 @@ struct std::formatter<kbot::Scheduler::Task> : std::formatter<std::string_view>
 template <>
 struct std::formatter<kbot::Scheduler> : std::formatter<std::string_view>
 {
-    constexpr auto parse(std::format_parse_context& ctx) {
+    constexpr auto parse(std::format_parse_context & ctx) {
         return ctx.begin();
     }
 

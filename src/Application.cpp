@@ -13,8 +13,10 @@ kbot::Application::Application(int argc, char** argv)
 {
     m_log.debug("{}: start", __func__);
     try {
-        std::unordered_map<UserID, UserConfig> & configs = m_cfg.all();
+        // SCHEDULE TASKS
 
+        // user related tasks
+        std::unordered_map<UserID, UserConfig> & configs = m_cfg.all();
         for (auto it = configs.begin(); it != configs.end();)
         {
             auto& [user_id, user_cfg] = *it;
@@ -31,7 +33,11 @@ kbot::Application::Application(int argc, char** argv)
             m_cfg.set_need_to_rewrite(true);
         }
 
+        // config synchronization task
         m_cfg.schedule_configs_synchronization();
+
+        // RUN SCHEDULER
+        m_sch.run();
     }
     catch (const std::runtime_error & e)
     {

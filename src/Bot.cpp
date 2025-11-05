@@ -25,19 +25,23 @@ kbot::Bot::Bot(Logger & log, Application & app, Scheduler & sch, std::string tok
 
 kbot::UserStatus kbot::Bot::get_user_status(UserID user_id)
 {
+    m_log.debug("{}: start for user #{}", __func__, user_id);
+
     ChatID chat_id;
     {
         std::scoped_lock lock(m_mutex);
         if (!m_app.cfg().has(user_id)) {
-            m_log.error("{}: not exists in ConfigStorage", __func__);
+            m_log.error("{}: user #{} not exists in ConfigStorage", __func__, user_id);
             return UserStatus::NotLoaded;
         }
+        chat_id = m_app.cfg().get(user_id).chat_id;
     }
 
     try {
         const UserStatus status = m_bot.getApi().blockedByUser(chat_id.get())
                                 ? UserStatus::LoadedButBannedUs
                                 : UserStatus::Loaded;
+        m_log.debug("{}: user #{} has status {}", __func__, user_id, status);
         return status;
     }
     catch (const std::exception& e) {
