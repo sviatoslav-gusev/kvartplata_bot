@@ -4,7 +4,6 @@
 
 kbot::Scheduler::Scheduler(Logger & log)
     : m_log(log)
-    , m_worker{[this]{ run(); }}
 {}
 
 kbot::Scheduler::~Scheduler()
@@ -132,47 +131,57 @@ void kbot::Scheduler::stop()
 
 void kbot::Scheduler::run()
 {
-    m_log.debug("{}: start", __func__);
-    while (!m_stop) {
-        m_log.debug("{} triggered", __func__);
+    m_worker = std::jthread{[this]
+    {
+        m_log.debug("run: start worker");
 
-        std::unique_lock lk(m_mutex);
+        while (!m_stop) {
+            std::unique_lock lk(m_mutex);
 
-        if (m_time_index.empty()) {
-            m_cv.wait(lk, [&]{ return m_stop || !m_time_index.empty(); });
-            continue;
-        }
-
-        const TimePoint closest_action_tp = m_time_index.begin()->first;
-        if (m_cv.wait_until(lk, closest_action_tp, [&]{ return m_stop; })) {
-            break;
-        }
-
-        if (m_time_index.empty()) {
-            continue;
-        }
-        std::multimap<TimePoint, TaskID>::iterator closest_action_it = m_time_index.begin();
-
-        if (std::chrono::system_clock::now() >= /*TimePoint*/ closest_action_it->first) {
-            // Extract task and erase indices
-            const Task task = std::move(m_storage.extract(/*TaskID*/ closest_action_it->second).mapped());
-            m_time_index.erase(closest_action_it);
-
-            if (!task.user_id.empty() && m_user_id_index.contains(task.user_id)) {
-                m_user_id_index[task.user_id].erase(task.task_id);
+            if (m_time_index.empty()) {
+                m_cv.wait(lk, [&]{ return m_stop || !m_time_index.empty(); });
+                continue;
             }
 
-            // TODO: Maybe remove later
-            m_log.debug("{} executed: ", __func__, task);
-            m_log.debug("{} scheduler after execution: ", __func__, *this);
+            const TimePoint closest_action_tp = m_time_index.begin()->first;
 
-            // Call callback
-            lk.unlock();
-            task.callback();
+            m_log.debug("run: worker loop checkpoint 1. Closest tp: {:%F %T}", closest_action_tp);
 
-            // RAII for task
+            if (m_cv.wait_until(lk, closest_action_tp, [&]{ return m_stop; })) {
+                break;
+            }
+
+            m_log.debug("run: worker loop checkpoint 2");
+
+            if (m_time_index.empty()) {
+                continue;
+            }
+
+            m_log.debug("run: worker loop checkpoint 3");
+
+            std::multimap<TimePoint, TaskID>::iterator closest_action_it = m_time_index.begin();
+
+            if (std::chrono::system_clock::now() >= /*TimePoint*/ closest_action_it->first) {
+                // Extract task and erase indices
+                const Task task = std::move(m_storage.extract(/*TaskID*/ closest_action_it->second).mapped());
+                m_time_index.erase(closest_action_it);
+
+                if (!task.user_id.empty() && m_user_id_index.contains(task.user_id)) {
+                    m_user_id_index[task.user_id].erase(task.task_id);
+                }
+
+                // TODO: Maybe remove later
+                m_log.debug("{} executed: ", __func__, task);
+                m_log.debug("{} scheduler after execution: ", __func__, *this);
+
+                // Call callback
+                lk.unlock();
+                task.callback();
+
+                // RAII for task
+            }
         }
-    }
 
-    m_log.debug("{}: end", __func__);
+        m_log.debug("{}: end", __func__);
+    }};
 }
