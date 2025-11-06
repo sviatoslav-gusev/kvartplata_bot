@@ -117,7 +117,7 @@ void kbot::ConfigStorage::schedule_configs_synchronization()
     const minutes now_hm_duration = floor<minutes>(now) - floor<days>(now);
 
     TimePoint tp;
-    if (now_hm_duration > m_sync_hm.to_duration()) {
+    if (now_hm_duration >= m_sync_hm.to_duration()) {
         tp = now_ymd_duration + days{1} + m_sync_hm.to_duration();
     }
     else {
