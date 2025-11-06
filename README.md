@@ -14,8 +14,7 @@ You may find ready binaries [here](https://github.com/sviatoslav-gusev/kvartplat
 1. **Install dependence:** [https://github.com/reo7sp/tgbot-cpp](https://github.com/reo7sp/tgbot-cpp).
 
 2. **Project valid for Linux and Windows** and was built in my setup with cmake/clang/ninja at Fleet IDE.  
-   Edit for your needs.  
-   Build binary your server.
+   Edit for your needs.
 
 ---
 **How to use**
