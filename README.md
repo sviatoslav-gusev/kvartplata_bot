@@ -1,6 +1,6 @@
 ## Scripts for kvartplata_bot service management
 
-To build binary refer to documentation at `release_1` branch.
+To download binary or build by yourself refer to documentation at `release_1` branch.
 
 Scripts mentioned below are located in `service` dir.
 
