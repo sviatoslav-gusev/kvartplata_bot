@@ -30,7 +30,7 @@ But also you can use it as standalone executable (both Windows or Linux) instead
    After that start again.
    TODO: change this approach in future versions
 
-3. **Binary argiments:** (standalone usage specific)
+3. **Binary arguments:** (standalone usage specific)
 
    ```bash
    kvartplata_bot [options] [args...]
