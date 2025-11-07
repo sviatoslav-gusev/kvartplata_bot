@@ -171,8 +171,8 @@ void kbot::Scheduler::run()
                 }
 
                 // TODO: Maybe remove later
-                m_log.debug("{} executed: ", __func__, task);
-                m_log.debug("{} scheduler after execution: ", __func__, *this);
+                m_log.debug("{} executed: {}", __func__, task);
+                m_log.debug("{} scheduler after execution: {}", __func__, *this);
 
                 // Call callback
                 lk.unlock();
