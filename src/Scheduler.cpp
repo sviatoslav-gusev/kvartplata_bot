@@ -23,36 +23,43 @@ bool kbot::Scheduler::has_task(TaskID task_id)
     return m_storage.contains(task_id);
 }
 
-kbot::TaskID kbot::Scheduler::enqueue_system_task(TimePoint time_point, std::function<void()> callback)
+kbot::TaskID kbot::Scheduler::enqueue_system_task(const TimePoint time_point, const std::function<void()> callback)
 {
-    TaskID task_id;
-    {
-        std::lock_guard lk(m_mutex);
-        task_id = gen_task_id();
-        m_storage.emplace(task_id, Task(task_id, time_point, UserID{}, callback));
-        m_time_index.emplace(time_point, task_id);
-
-        // TODO: maybe remove later
-        m_log.debug("{} after: {}", __func__, *this);
-    }
-    m_cv.notify_one();
-    return task_id;
+    m_log.debug("{} start", __func__);
+    return enqueue_task(time_point, UserID{}, callback);
 }
 
-kbot::TaskID kbot::Scheduler::enqueue_user_task(TimePoint time_point, UserID user_id, std::function<void()> callback)
+kbot::TaskID kbot::Scheduler::enqueue_user_task(const TimePoint time_point, const UserID user_id, std::function<void()> callback)
+{
+    m_log.debug("{} start", __func__);
+    return enqueue_task(time_point, user_id, callback);
+}
+
+kbot::TaskID kbot::Scheduler::enqueue_task(const TimePoint time_point, const UserID user_id, const std::function<void()> callback)
 {
     TaskID task_id;
+    bool closest_tp_updated = false;
     {
         std::lock_guard lk(m_mutex);
         task_id = gen_task_id();
         m_storage.emplace(task_id, Task(task_id, time_point, user_id, callback));
-        m_user_id_index[user_id].insert(task_id);
+
+        if (!user_id.empty()) {
+            m_user_id_index[user_id].insert(task_id);
+        }
+
+        const TimePoint closest_tp_before = m_time_index.empty()
+                                          ? TimePoint::max()
+                                          : m_time_index.begin()->first;
         m_time_index.emplace(time_point, task_id);
+        closest_tp_updated = time_point < closest_tp_before;
 
         // TODO: maybe remove later
         m_log.debug("{} after: {}", __func__, *this);
     }
-    m_cv.notify_one();
+    if (closest_tp_updated) {
+        m_cv.notify_one();
+    }
     return task_id;
 }
 

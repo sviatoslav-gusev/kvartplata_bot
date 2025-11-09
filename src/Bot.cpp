@@ -262,7 +262,6 @@ void kbot::Bot::load_bot_commands()
                 signal_hour_minute = new_user_config.signal_hour_minute;
 
                 m_app.cfg().set(new_user_config);
-                initial_user_schedule(new_user_config);
             }
         }
 
@@ -276,6 +275,7 @@ void kbot::Bot::load_bot_commands()
         }
         else
         {
+            initial_user_schedule(m_app.cfg().get(user_id));
             m_log.wow("onCommand(\"start\"): /start for new user #{}", user_id);
             m_bot.getApi().sendMessage(chat_id.get(),
                                        std::format("Welcome, #{}!\n"
