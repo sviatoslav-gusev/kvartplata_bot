@@ -50,6 +50,8 @@ public:
     void delete_all_user_tasks_for(UserID user_id);
 
 private:
+    TaskID enqueue_task(TimePoint time_point, UserID user_id, std::function<void()> callback);
+
     TaskID gen_task_id();
 
     void stop();
