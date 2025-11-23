@@ -20,12 +20,11 @@ namespace cfg_default
 struct UserConfig
 {
     UserConfig() = default;
-    explicit UserConfig(UserID user_id, ChatID chat_id);
+    UserConfig(UserID user_id, ChatID chat_id);
 
     // All below is UTC
-    std::chrono::day signal_day {cfg_default::DAY};
-    std::chrono::hh_mm_ss<std::chrono::minutes> signal_hour_minute {std::chrono::hours{cfg_default::HOUR} +
-                                                                    std::chrono::minutes{cfg_default::MINUTE}};
+    std::chrono::day signal_day;
+    std::chrono::hh_mm_ss<std::chrono::minutes> signal_hour_minute;
 
     std::chrono::year_month last_paid_year_month;
 

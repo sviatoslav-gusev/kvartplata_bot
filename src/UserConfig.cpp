@@ -6,10 +6,29 @@
 #include <optional>
 
 kbot::UserConfig::UserConfig(UserID user_id, ChatID chat_id)
-    : last_paid_year_month([&]{
+    : signal_day(cfg_default::DAY)
+    , signal_hour_minute(std::chrono::hours{cfg_default::HOUR} + std::chrono::minutes{cfg_default::MINUTE})
+    , last_paid_year_month([&]{
           using namespace std::chrono;
-          const year_month_day ymd_prev = year_month_day{ floor<days>(system_clock::now()) } - months{1};
-          return year_month{ymd_prev.year(), ymd_prev.month()};
+
+          const system_clock::time_point now = system_clock::now();
+          const year_month_day now_ymd = {floor<days>(now)};
+          const minutes now_hm_duration = floor<minutes>(now) - floor<days>(now);
+          const year_month now_ym = year_month{now_ymd.year(), now_ymd.month()};
+          const minutes signal_hm_duration = duration_cast<minutes>(signal_hour_minute.to_duration());
+          const year_month_day signal_this_month_ymd = util::make_valid_ymd(now_ym, day{cfg_default::DAY});
+
+          const bool before_payment_dhm =
+              now_ymd < signal_this_month_ymd ||
+              (now_ymd == signal_this_month_ymd && now_hm_duration < signal_hm_duration);
+
+          if (before_payment_dhm) {
+              const year_month_day ymd_prev = year_month_day{ now_ymd } - months{1};
+              return year_month{ymd_prev.year(), ymd_prev.month()};
+          }
+          else {
+              return year_month{now_ymd.year(), now_ymd.month()};
+          }
       }())
     , user_id(user_id)
     , chat_id(chat_id)
