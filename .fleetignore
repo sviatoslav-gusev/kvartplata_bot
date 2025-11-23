@@ -1,9 +1,0 @@
-build/
-.idea/
-.fleet/
-vcpkg/
-vcpkg_installed/
-.git/
-node_modules/
-out/
-dist/
