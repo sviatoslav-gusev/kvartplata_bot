@@ -23,65 +23,30 @@ kbot::Bot::Bot(Logger & log, Application & app, Scheduler & sch, std::string tok
     load_bot_commands();
 }
 
-kbot::UserStatus kbot::Bot::get_user_status(UserID user_id)
+bool kbot::Bot::is_user_loaded(UserID user_id)
 {
-    m_log.debug("{}: start for user #{}", __func__, user_id);
-
-    ChatID chat_id;
-    {
-        std::scoped_lock lock(m_mutex);
-        if (!m_app.cfg().has(user_id)) {
-            m_log.error("{}: user #{} not exists in ConfigStorage", __func__, user_id);
-            return UserStatus::NotLoaded;
-        }
-        chat_id = m_app.cfg().get(user_id).chat_id;
+    std::scoped_lock lock(m_mutex);
+    if (!m_app.cfg().has(user_id)) {
+        m_log.error("{}: user #{} not exists in ConfigStorage", __func__, user_id);
+        return false;
     }
-
-    try {
-        const UserStatus status = m_bot.getApi().blockedByUser(chat_id.get())
-                                ? UserStatus::LoadedButBannedUs
-                                : UserStatus::Loaded;
-        m_log.debug("{}: user #{} has status {}", __func__, user_id, status);
-        return status;
-    }
-    catch (const std::exception& e) {
-        m_log.error("{}: blockedByUser({}) failed: {}", __func__, chat_id, e.what());
-        return UserStatus::Unknown;
-    }
+    return true;
 }
 
 void kbot::Bot::notify_payment(UserID user_id)
 {
-    ChatID chat_id;
-    switch (get_user_status(user_id)) {
-    case UserStatus::Loaded: {
-        m_log.debug("{}: user #{} received notification.", __func__, user_id);
-        std::scoped_lock lk(m_mutex);
-        chat_id = m_app.cfg().get(user_id).chat_id;
-        break;
-    }
-    case UserStatus::LoadedButBannedUs: {
-        m_log.wow("{}: user #{} banned us! Remove his data.", __func__, user_id);
-        unschedule_all_notifications_for(user_id);
-        std::scoped_lock lock(m_mutex);
-        m_app.cfg().remove(user_id);
-        m_app.cfg().set_need_to_rewrite(true);
-        return;
-    }
-    case UserStatus::Unknown:
-    case UserStatus::NotLoaded: {
+    if (!is_user_loaded(user_id))
+    {
         m_log.error("{}: strange call, because user #{} not exists in ConfigStorage", __func__, user_id);
         return;
     }
-    }
 
-
-    m_bot.getApi().sendMessage(chat_id.get(),
-                               std::format("Hi, #{}.\n"
-                                           "Albanian reminder.\n"
-                                           "Send \"Y\" if you paid for current month.\n",
-                                           user_id));
-    m_log.debug("{}: User #{} is noticed now", __func__, user_id);
+    try_send_message(user_id,
+                     std::format("Hi, #{}.\n"
+                                 "Albanian reminder.\n"
+                                 "Send \"Y\" if you paid for current month.\n",
+                                 user_id));
+    m_log.debug("{}: User #{} is notified now", __func__, user_id);
 
     /********** SCHEDULE NEXT **********/
     TimePoint signal_tp;
@@ -157,7 +122,7 @@ void kbot::Bot::submit_payment(UserID user_id)
         if (last_paid_ym_before == now_ym)
         {
             m_log.debug("{}: User #{} tried to pay for current month again", __func__, user_id);
-            m_bot.getApi().sendMessage(chat_id.get(), "You already paid this month!");
+            try_send_message(user_id, "You already paid this month!");
             return;
         }
 
@@ -175,11 +140,11 @@ void kbot::Bot::submit_payment(UserID user_id)
         if (last_paid_ym_before + months{1} == now_ym && before_payment_dhm)
         {
             m_log.debug("{}: User #{} tried to pay for this month too early.", __func__, user_id);
-            m_bot.getApi().sendMessage(cfg.chat_id.get(),
-                                       std::format("It is early to pay this month!\n"
-                                                   "I will remind you at {}, {} UTC\n",
-                                                   signal_this_month_ymd,
-                                                   signal_hm));
+            try_send_message(user_id,
+                             std::format("It is early to pay this month!\n"
+                                         "I will remind you at {}, {} UTC\n",
+                                         signal_this_month_ymd,
+                                         signal_hm));
             return;
         }
 
@@ -210,11 +175,11 @@ void kbot::Bot::submit_payment(UserID user_id)
 
     m_log.debug("{}: User #{} successfully paid for current month. Next scheduled to {}, {}",
                 __func__, user_id, signal_ymd, signal_hm);
-    m_bot.getApi().sendMessage(chat_id.get(),
-                               std::format("Great!\n"
-                                           "Your next notification will be called at {}, {} UTC\n",
-                                           signal_ymd,
-                                           signal_hm));
+    try_send_message(user_id,
+                     std::format("Great!\n"
+                                 "Your next notification will be called at {}, {} UTC\n",
+                                 signal_ymd,
+                                 signal_hm));
 }
 
 kbot::TaskID kbot::Bot::schedule_payment_notification(UserID user_id, const std::chrono::system_clock::time_point & tp)
@@ -268,21 +233,21 @@ void kbot::Bot::load_bot_commands()
         if (user_is_duplicated)
         {
             m_log.wow("onCommand(\"start\"): /start for existing user #{}", user_id);
-            m_bot.getApi().sendMessage(chat_id.get(),
-                                       std::format("Hi, #{}!\n"
-                                                   "Your account is alreary running.\n",
-                                                   user_id));
+            try_send_message(user_id,
+                             std::format("Hi, #{}!\n"
+                                         "Your account is alreary running.\n",
+                                         user_id));
         }
         else
         {
             initial_user_schedule(m_app.cfg().get(user_id));
             m_log.wow("onCommand(\"start\"): /start for new user #{}", user_id);
-            m_bot.getApi().sendMessage(chat_id.get(),
-                                       std::format("Welcome, #{}!\n"
-                                                   "Your closest notification will be at closest {} day in {}\n",
-                                                   user_id,
-                                                   signal_day,
-                                                   signal_hour_minute));
+            try_send_message(user_id,
+                             std::format("Welcome, #{}!\n"
+                                         "Your closest notification will be at closest {} day in {}\n",
+                                         user_id,
+                                         signal_day,
+                                         signal_hour_minute));
         }
     });
 
@@ -297,17 +262,19 @@ void kbot::Bot::load_bot_commands()
     });
 
     m_bot.getEvents().onAnyMessage([this](TgBot::Message::Ptr msg) {
+        const UserID user_id{msg->from->id};
+
         if (StringTools::startsWith(msg->text, "/start") || StringTools::startsWith(msg->text, "/stop")) {
             return;
         }
-        m_log.wow("onAnyMessage(): user #{} wrote: {}", msg->from->id, msg->text);
+        m_log.wow("onAnyMessage(): user #{} wrote: {}", user_id, msg->text);
 
         if (std::ranges::any_of(std::array{"Y", "y", "Д", "д"}, [&](auto v){ return msg->text == v; })) {
-            submit_payment(UserID{msg->from->id});
+            submit_payment(user_id);
             return;
         }
 
-        m_bot.getApi().sendMessage(msg->chat->id, "Unknown message: " + msg->text);
+        try_send_message(user_id, "Unknown message: " + msg->text);
     });
 }
 
@@ -386,7 +353,6 @@ void kbot::Bot::run_until(const std::function<bool()> & stop_flag)
         while (!stop_flag()) {
             m_log.debug("long poll started");
             try {
-//                m_bot.getApi().sendMessage(message->chat->id, "Your message is: " + message->text);
                 longPoll.start();   // will return by timeouts of at answer
             } catch (const std::exception& e) {
                 // not to throw to avoid crashes at temporary network problems
@@ -396,5 +362,32 @@ void kbot::Bot::run_until(const std::function<bool()> & stop_flag)
     }
     catch (std::exception & e) {
         m_log.error("{}: error: {}", __func__, e.what());
+    }
+}
+
+void kbot::Bot::try_send_message(kbot::UserID user_id, const std::string & text)
+{
+    const ChatID chat_id = m_app.cfg().get(user_id).chat_id;
+
+    try {
+        m_bot.getApi().sendMessage(chat_id.get(), text);
+    } catch (TgBot::TgException& e) {
+        switch (e.errorCode) {
+        case TgBot::TgException::ErrorCode::Forbidden: {
+
+            m_log.warn("{}: User #{} is unreachable: {}. Removing him.", __func__, user_id, e.what());
+
+            unschedule_all_notifications_for(user_id);
+            std::scoped_lock lock(m_mutex);
+            m_app.cfg().remove(user_id);
+            m_app.cfg().set_need_to_rewrite(true);
+            return;
+        }
+        case TgBot::TgException::ErrorCode::Flood: // too many requests
+        case TgBot::TgException::ErrorCode::BadRequest: // wrong ChatID or user had not communicate with us
+        default: // another cases
+            m_log.error("{}: Message {} is not delivered to #{}", __func__, e.what(), chat_id);
+            return;
+        }
     }
 }

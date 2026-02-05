@@ -21,14 +21,14 @@ kbot::Application::Application(int argc, char** argv)
         {
             auto& [user_id, user_cfg] = *it;
 
-            if (m_bot.get_user_status(user_id) == UserStatus::Loaded)
+            if (m_bot.is_user_loaded(user_id))
             {
                 m_bot.initial_user_schedule(user_cfg);
                 ++it;
                 continue;
             }
 
-            // UserStatus::Unknown,  UserStatus::NotLoaded,  UserStatus::LoadedButBannedUs
+            // Evil mystic
             it = configs.erase(it);
             m_cfg.set_need_to_rewrite(true);
         }
