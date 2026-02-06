@@ -14,6 +14,13 @@ namespace kbot {
 
 class Application;
 
+enum class MsgSendingStatus
+{
+    OK,
+    ErrorUserUnreachable,
+    ErrorDefault
+};
+
 class Bot {
 public:
     explicit Bot(Logger & log, Application & app, Scheduler & sch, std::string tg_token);
@@ -25,7 +32,8 @@ public:
 private:
     void load_bot_commands(); // Use before run
 
-    void try_send_message(UserID user_id, const std::string & text);
+    MsgSendingStatus try_send_message(UserID user_id, const std::string & text);
+    void delete_user(UserID user_id);
 
     void notify_payment(UserID user_id);  // scheduled user reminding, new reminding for tomorrow
     void submit_payment(UserID user_id);  // get payment confirmation, rescheduling to next payment period
@@ -44,3 +52,27 @@ private:
 };
 
 } // namespace kbot
+
+
+template <>
+struct std::formatter<kbot::MsgSendingStatus> : std::formatter<std::string_view>
+{
+    constexpr auto parse(std::format_parse_context & ctx) { return ctx.begin(); }
+
+    template <class FormatContext>
+    auto format(const kbot::MsgSendingStatus & status, FormatContext & ctx) const
+    {
+        std::string_view s;
+
+        switch (status)
+        {
+        case kbot::MsgSendingStatus::OK:                    s = "OK";                   break;
+        case kbot::MsgSendingStatus::ErrorUserUnreachable:  s = "ErrorUserUnreachable"; break;
+
+        case kbot::MsgSendingStatus::ErrorDefault:
+        default:                                            s = "ErrorDefault";
+        }
+
+        return std::formatter<std::string_view>::format(s, ctx);
+    }
+};

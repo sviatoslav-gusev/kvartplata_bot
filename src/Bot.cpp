@@ -41,11 +41,20 @@ void kbot::Bot::notify_payment(UserID user_id)
         return;
     }
 
-    try_send_message(user_id,
-                     std::format("Hi, #{}.\n"
-                                 "Albanian reminder.\n"
-                                 "Send \"Y\" if you paid for current month.\n",
-                                 user_id));
+    MsgSendingStatus msgStatus = try_send_message(user_id,
+                                                  std::format("Hi, #{}.\n"
+                                                              "Albanian reminder.\n"
+                                                              "Send \"Y\" if you paid for current month.\n",
+                                                              user_id));
+
+    if (msgStatus == MsgSendingStatus::ErrorUserUnreachable) {
+        delete_user(user_id);
+    }
+    if (msgStatus != MsgSendingStatus::OK) {
+        m_log.wow("{}: Cannot send msg to User #{}", __func__, user_id);
+        return;
+    }
+
     m_log.debug("{}: User #{} is notified now", __func__, user_id);
 
     /********** SCHEDULE NEXT **********/
@@ -122,7 +131,12 @@ void kbot::Bot::submit_payment(UserID user_id)
         if (last_paid_ym_before == now_ym)
         {
             m_log.debug("{}: User #{} tried to pay for current month again", __func__, user_id);
-            try_send_message(user_id, "You already paid this month!");
+
+            if (MsgSendingStatus::ErrorUserUnreachable ==
+                try_send_message(user_id, "You already paid this month!"))
+            {
+                delete_user(user_id);
+            }
             return;
         }
 
@@ -140,11 +154,15 @@ void kbot::Bot::submit_payment(UserID user_id)
         if (last_paid_ym_before + months{1} == now_ym && before_payment_dhm)
         {
             m_log.debug("{}: User #{} tried to pay for this month too early.", __func__, user_id);
-            try_send_message(user_id,
-                             std::format("It is early to pay this month!\n"
-                                         "I will remind you at {}, {} UTC\n",
-                                         signal_this_month_ymd,
-                                         signal_hm));
+            if (MsgSendingStatus::ErrorUserUnreachable ==
+                try_send_message(user_id,
+                                 std::format("It is early to pay this month!\n"
+                                             "I will remind you at {}, {} UTC\n",
+                                             signal_this_month_ymd,
+                                             signal_hm)))
+            {
+                delete_user(user_id);
+            }
             return;
         }
 
@@ -175,11 +193,16 @@ void kbot::Bot::submit_payment(UserID user_id)
 
     m_log.debug("{}: User #{} successfully paid for current month. Next scheduled to {}, {}",
                 __func__, user_id, signal_ymd, signal_hm);
-    try_send_message(user_id,
-                     std::format("Great!\n"
-                                 "Your next notification will be called at {}, {} UTC\n",
-                                 signal_ymd,
-                                 signal_hm));
+
+    if (MsgSendingStatus::ErrorUserUnreachable ==
+        try_send_message(user_id,
+                         std::format("Great!\n"
+                                     "Your next notification will be called at {}, {} UTC\n",
+                                     signal_ymd,
+                                     signal_hm)))
+    {
+        delete_user(user_id);
+    }
 }
 
 kbot::TaskID kbot::Bot::schedule_payment_notification(UserID user_id, const std::chrono::system_clock::time_point & tp)
@@ -365,29 +388,35 @@ void kbot::Bot::run_until(const std::function<bool()> & stop_flag)
     }
 }
 
-void kbot::Bot::try_send_message(kbot::UserID user_id, const std::string & text)
+kbot::MsgSendingStatus kbot::Bot::try_send_message(kbot::UserID user_id, const std::string & text)
 {
-    const ChatID chat_id = m_app.cfg().get(user_id).chat_id;
-
     try {
-        m_bot.getApi().sendMessage(chat_id.get(), text);
+        m_bot.getApi().sendMessage(user_id.get(), text); // In single-user chat user_id == chat_id. Against applied logic, but simpler code.
     } catch (TgBot::TgException& e) {
         switch (e.errorCode) {
         case TgBot::TgException::ErrorCode::Forbidden: {
-
-            m_log.warn("{}: User #{} is unreachable: {}. Removing him.", __func__, user_id, e.what());
-
-            unschedule_all_notifications_for(user_id);
-            std::scoped_lock lock(m_mutex);
-            m_app.cfg().remove(user_id);
-            m_app.cfg().set_need_to_rewrite(true);
-            return;
+            m_log.warn("{}: User #{} is unreachable: {}", __func__, user_id, e.what());
+            return kbot::MsgSendingStatus::ErrorUserUnreachable;
         }
         case TgBot::TgException::ErrorCode::Flood: // too many requests
         case TgBot::TgException::ErrorCode::BadRequest: // wrong ChatID or user had not communicate with us
         default: // another cases
-            m_log.error("{}: Message {} is not delivered to #{}", __func__, e.what(), chat_id);
-            return;
+            m_log.error("{}: Message is not delivered to User #{}: {}", __func__, user_id, e.what());
+            return kbot::MsgSendingStatus::ErrorDefault;
         }
     }
+    return kbot::MsgSendingStatus::OK;
+}
+
+void kbot::Bot::delete_user(kbot::UserID user_id)
+{
+    m_log.wow("{}: User #{} is unreachable now. Deleting him", __func__, user_id);
+
+    unschedule_all_notifications_for(user_id);
+
+    std::scoped_lock lock(m_mutex);
+
+    ConfigStorage & cs = m_app.cfg();
+    cs.remove(user_id);
+    cs.set_need_to_rewrite(true);
 }
